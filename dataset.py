@@ -5,33 +5,27 @@ from PIL import Image
 import torch
 import scipy.io as sio
 import utils
-import cv2
+import cv2    
 
 class LP300W(Dataset):
-    def __init__(self, root_dir, transform=None, apply_occlusion=True, occlusion_mode="clean"):
+    def __init__(self, image_paths, transform=None, apply_occlusion=True, occlusion_mode="random"):
         """
-        occlusion_mode: 'random', 'clean', 'mask', or 'glasses'
-        apply_occlusion: If False, ignores occlusion pipeline
+        image_paths: List of file paths to images
+        occlusion_mode: 'random', 'clean', 'mask', 'glasses', or 'both'
+        apply_occlusion: If False, ignores occlusion pipeline completely
         """
-        self.root_dir = root_dir
-        self.mode = occlusion_mode
+        self.occlusion_mode = occlusion_mode
         self.transform = transform
         self.apply_occlusion = apply_occlusion
+        
         self.image_paths = []
         self.mat_paths = []
 
-        # Gather file pairs across subfolders
-        for folder in os.listdir(root_dir):
-            folder_path = os.path.join(root_dir, folder)
-            if not os.path.isdir(folder_path):
-                continue
-            for file in os.listdir(folder_path):
-                if file.endswith(".jpg"):
-                    img_path = os.path.join(folder_path, file)
-                    mat_path = img_path.replace(".jpg", ".mat")
-                    if os.path.exists(mat_path):
-                        self.image_paths.append(img_path)
-                        self.mat_paths.append(mat_path)
+        for img_path in image_paths:
+            mat_path = img_path.replace(".jpg", ".mat")
+            if os.path.exists(mat_path):
+                self.image_paths.append(img_path)
+                self.mat_paths.append(mat_path)
 
     def __len__(self):
         return len(self.image_paths)
@@ -48,9 +42,11 @@ class LP300W(Dataset):
 
         if self.apply_occlusion:
             landmarks = utils.extract_landmarks(img_path)
-            img = utils.apply_geometric_occlusion(img, landmarks, mode=self.mode)
+            img = utils.apply_occlusion(img, landmarks, mode=self.occlusion_mode)
 
         if self.transform:
+            if not isinstance(img, Image.Image):
+                img = Image.fromarray(img)
             img = self.transform(img)
 
         return img, pose
