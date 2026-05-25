@@ -9,7 +9,7 @@ from einops import rearrange, repeat
 from torch import nn
 from timm.layers import trunc_normal_
 from models.ViT_model import VisionTransformer
-from models.utils import compute_rotation_matrix_from_ortho6d
+from models.utils_hpe import compute_rotation_matrix_from_ortho6d
 import matplotlib.pyplot as plt
 import seaborn as sns
 MIN_NUM_PATCHES = 16
