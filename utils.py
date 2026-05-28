@@ -9,7 +9,7 @@ from PIL import Image
 import torchvision.transforms as T
 from tqdm import tqdm
 from models.utils_hpe import compute_euler_angles_from_rotation_matrices, compute_rotation_matrix_from_ortho6d, draw_axis
-from sklearn.metrics import mean_absolute_error, root_mean_squared_error, r2_score
+from sklearn.metrics import mean_absolute_error, root_mean_squared_error
 
 def set_global_seed(seed=123):
     random.seed(seed)
@@ -47,7 +47,10 @@ def evaluate_metrics(model, dataloader, device):
     
     mae_array = mean_absolute_error(all_targets, all_preds, multioutput='raw_values')
     rmse_array = root_mean_squared_error(all_targets, all_preds, multioutput='raw_values')
-    r2_array = r2_score(all_targets, all_preds, multioutput='raw_values')
+
+    target_ranges = np.max(all_targets, axis=0) - np.min(all_targets, axis=0)
+    target_ranges[target_ranges == 0] = 1e-8 
+    nrmse_array = rmse_array / target_ranges
     
     axes = ['pitch', 'yaw', 'roll']
     
@@ -56,11 +59,11 @@ def evaluate_metrics(model, dataloader, device):
     
     rmse = {axes[i]: rmse_array[i] for i in range(3)}
     rmse['total'] = np.mean(rmse_array)
+
+    nrmse = {axes[i]: nrmse_array[i] for i in range(3)}
+    nrmse['total'] = np.mean(nrmse_array)
     
-    r2 = {axes[i]: r2_array[i] for i in range(3)}
-    r2['total'] = np.mean(r2_array)
-    
-    return mae, rmse, r2
+    return mae, rmse, nrmse
 
 ###################################
 ############ Occlusion ############
