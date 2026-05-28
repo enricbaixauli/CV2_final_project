@@ -228,3 +228,151 @@ def compare_head_pose_models_with_error(img_path, model_thpe, model_sixD, model_
         
     plt.tight_layout()
     plt.show()
+
+def plot_training_history(train_losses, val_losses, model_name="Model"):
+    """
+    Plots the training and validation loss curves for a single model run.
+    """
+    epochs = range(1, len(train_losses) + 1)
+    
+    plt.figure(figsize=(9, 5))
+    
+    plt.plot(epochs, train_losses, label='Training Loss', marker='o', linewidth=2, color='#1f77b4')
+    plt.plot(epochs, val_losses, label='Validation Loss', marker='s', linewidth=2, color='#ff7f0e')
+    
+    plt.title(f'{model_name} - Training & Validation Loss History', fontsize=14, fontweight='bold', pad=15)
+    plt.xlabel('Epochs', fontsize=12)
+    plt.ylabel('Loss (MAE in Radians)', fontsize=12)
+    
+    plt.xticks(epochs)
+    
+    plt.grid(True, linestyle='--', alpha=0.5)
+    plt.legend(fontsize=11, loc='best')
+    
+    plt.tight_layout()
+    plt.show()    
+
+
+def evaluate_paired_images_thpe(img_path1, img_path2, model_thpe, device=None):
+    """
+    Runs TokenHPE inference on two related images (e.g., raw vs. occluded),
+    using the .mat file from the first image as the shared ground truth.
+    Prints a comparative evaluation table and displays both images side-by-side.
+    """
+    # Safety checks for files
+    if not os.path.exists(img_path1):
+        print(f"Error: Base image path '{img_path1}' does not exist.")
+        return
+    if not os.path.exists(img_path2):
+        print(f"Error: Modified image path '{img_path2}' does not exist.")
+        return
+
+    # 1. Ground Truth Extraction (Anchored to img_path1)
+    base_path1, _ = os.path.splitext(img_path1)
+    mat_path = base_path1 + ".mat"
+    
+    if not os.path.exists(mat_path):
+        print(f"Error: Shared ground-truth file '{mat_path}' not found.")
+        return
+        
+    mat = sio.loadmat(mat_path)
+    vector_6d = mat["HP_camera"][0]
+    
+    gt_pitch = float(vector_6d[3])
+    gt_yaw   = float(vector_6d[4])
+    gt_roll  = float(vector_6d[5])
+
+    # Load image matrices
+    img_cv1 = cv2.imread(img_path1)
+    img_cv2 = cv2.imread(img_path2)
+    img_pil1 = Image.open(img_path1).convert("RGB")
+    img_pil2 = Image.open(img_path2).convert("RGB")
+    
+    if device is None:
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    
+    transform = T.Compose([
+        T.Resize((224, 224)),
+        T.ToTensor()
+    ])
+    
+    model_thpe.eval()
+    
+    # 2. Inference Pipeline (Image 1)
+    x1 = transform(img_pil1).unsqueeze(0).to(device)
+    with torch.no_grad():
+        pred_mat1, _ = model_thpe(x1)
+    euler1 = compute_euler_angles_from_rotation_matrices(pred_mat1)
+    if isinstance(euler1, torch.Tensor): euler1 = euler1.cpu().numpy()
+    euler1 = euler1 * 180.0 / np.pi
+    p1, y1, r1 = float(euler1[0, 0]), float(euler1[0, 1]), float(euler1[0, 2])
+
+    # 3. Inference Pipeline (Image 2)
+    x2 = transform(img_pil2).unsqueeze(0).to(device)
+    with torch.no_grad():
+        pred_mat2, _ = model_thpe(x2)
+    euler2 = compute_euler_angles_from_rotation_matrices(pred_mat2)
+    if isinstance(euler2, torch.Tensor): euler2 = euler2.cpu().numpy()
+    euler2 = euler2 * 180.0 / np.pi
+    p2, y2, r2 = float(euler2[0, 0]), float(euler2[0, 1]), float(euler2[0, 2])
+
+    # 4. Error Calculations
+    def get_error(pred, gt):
+        if 'compute_angle_error' in globals():
+            return compute_angle_error(pred, gt)
+        return abs(pred - gt)
+        
+    # Image 1 Metrics
+    err_p1 = get_error(p1, gt_pitch)
+    err_y1 = get_error(y1, gt_yaw)
+    err_r1 = get_error(r1, gt_roll)
+    mae1 = (err_p1 + err_y1 + err_r1) / 3.0
+    
+    # Image 2 Metrics
+    err_p2 = get_error(p2, gt_pitch)
+    err_y2 = get_error(y2, gt_yaw)
+    err_r2 = get_error(r2, gt_roll)
+    mae2 = (err_p2 + err_y2 + err_r2) / 3.0
+    
+    # 5. Print Comparative Table
+    print("\n" + "="*85)
+    print(f"Ground Truth   | Pitch: {gt_pitch:+6.2f}° | Yaw: {gt_yaw:+6.2f}° | Roll: {gt_roll:+6.2f}°")
+    print("="*85)
+    print(f"{'Image Version':<16} | {'Pitch (Error)':<15} | {'Yaw (Error)':<15} | {'Roll (Error)':<15} | {'MAE':<7}")
+    print("="*85)
+    print(f"{'1. Base Image':<16} | {p1:+6.2f} ({err_p1:5.2f}°) | {y1:+6.2f} ({err_y1:5.2f}°) | {r1:+6.2f} ({err_r1:5.2f}°) | {mae1:5.2f}°")
+    print(f"{'2. Mod Image':<16} | {p2:+6.2f} ({err_p2:5.2f}°) | {y2:+6.2f} ({err_y2:5.2f}°) | {r2:+6.2f} ({err_r2:5.2f}°) | {mae2:5.2f}°")
+    print("="*85 + "\n")
+    
+    # 6. Axis Visualizations
+    img_out1 = img_cv1.copy()
+    draw_axis(img_out1, y1, p1, r1, size=100)
+    
+    img_out2 = img_cv2.copy()
+    draw_axis(img_out2, y2, p2, r2, size=100)
+    
+    # 7. Side-by-Side Plotting
+    fig, axes = plt.subplots(1, 2, figsize=(15, 7.5))
+    
+    # Plot Image 1
+    axes[0].imshow(cv2.cvtColor(img_out1, cv2.COLOR_BGR2RGB))
+    axes[0].set_title(
+        f"1. Base Image (TokenHPE Predictions)\n"
+        f"MAE: {mae1:.2f}°\n"
+        f"Err -> P: {err_p1:.1f}°, Y: {err_y1:.1f}°, R: {err_r1:.1f}°",
+        fontsize=11, fontweight='bold'
+    )
+    axes[0].axis('off')
+    
+    # Plot Image 2
+    axes[1].imshow(cv2.cvtColor(img_out2, cv2.COLOR_BGR2RGB))
+    axes[1].set_title(
+        f"2. Modified Image (TokenHPE Predictions)\n"
+        f"MAE: {mae2:.2f}°\n"
+        f"Err -> P: {err_p2:.1f}°, Y: {err_y2:.1f}°, R: {err_r2:.1f}°",
+        fontsize=11, fontweight='bold'
+    )
+    axes[1].axis('off')
+    
+    plt.tight_layout()
+    plt.show()
