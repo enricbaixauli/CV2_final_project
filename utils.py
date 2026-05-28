@@ -65,84 +65,38 @@ def evaluate_metrics(model, dataloader, device):
     
     return mae, rmse, nrmse
 
-###################################
-############ Occlusion ############
-###################################
-
-def extract_landmarks(ruta_imagen):
-    photo_name = os.path.splitext(os.path.basename(ruta_imagen))[0]
-    folder = os.path.basename(os.path.dirname(ruta_imagen))
-    ruta_mat = f"./dataset/300W_LP/landmarks/{folder}/{photo_name}_pts.mat"
-    
-    if not os.path.exists(ruta_mat):
-        raise FileNotFoundError(f"Error: No landmarks found for: {ruta_mat}")
-
-    mat_data = sio.loadmat(ruta_mat)
-
-    if 'pts_2d' in mat_data:
-        landmarks = mat_data['pts_2d']
-    else:
-        raise ValueError(f"Error: No landmarks found for: {ruta_mat}")
-
-    return landmarks.astype(np.int32)
-
-def apply_occlusion(img, landmarks, mode="random"):
+def plot_training_history(train_losses, val_losses, model_name="Model"):
     """
-    mode can be: 'random', 'clean', 'mask', 'glasses' or 'both'
+    Plots the training and validation loss curves for a single model run.
     """
-    img_occluded = img.copy()
+    epochs = range(1, len(train_losses) + 1)
     
-    if mode == "random":
-        choice = np.random.choice(["clean", "mask", "glasses", "both"], p=[0.25, 0.25, 0.25, 0.25])
-    else:
-        choice = mode
-        
-    if choice == "clean":
-        return img_occluded
+    plt.figure(figsize=(9, 5))
+    
+    plt.plot(epochs, train_losses, label='Training Loss', marker='o', linewidth=2, color='#1f77b4')
+    plt.plot(epochs, val_losses, label='Validation Loss', marker='s', linewidth=2, color='#ff7f0e')
+    
+    plt.title(f'{model_name} - Training & Validation Loss History', fontsize=14, fontweight='bold', pad=15)
+    plt.xlabel('Epochs', fontsize=12)
+    plt.ylabel('Loss (MAE in Radians)', fontsize=12)
+    
+    plt.xticks(epochs)
+    
+    plt.grid(True, linestyle='--', alpha=0.5)
+    plt.legend(fontsize=11, loc='best')
+    
+    plt.tight_layout()
+    plt.show()    
 
-    if choice in ["mask", "both"]:
-        jaw_points = landmarks[2:15]
-        nose_points = landmarks[29:31] 
-
-        mask_points = np.vstack((jaw_points, nose_points))
-
-        hull = cv2.convexHull(mask_points)
-
-        cv2.fillPoly(img_occluded, [hull], (0, 0, 0))
-
-    if choice in ["glasses", "both"]:
-        left_eye = landmarks[36:42]
-        right_eye = landmarks[42:48]
-        
-        left_hull = cv2.convexHull(left_eye)
-        right_hull = cv2.convexHull(right_eye)
-        
-        cv2.fillPoly(img_occluded, [left_hull], (0, 0, 0))
-        cv2.fillPoly(img_occluded, [right_hull], (0, 0, 0))
-        
-        expansion_thickness = 25
-        cv2.polylines(img_occluded, [left_hull], isClosed=True, color=(0, 0, 0), thickness=expansion_thickness)
-        cv2.polylines(img_occluded, [right_hull], isClosed=True, color=(0, 0, 0), thickness=expansion_thickness)
-        
-        pt1 = tuple(landmarks[39])
-        pt2 = tuple(landmarks[42])
-        cv2.line(img_occluded, pt1, pt2, (0, 0, 0), thickness=8)
-
-    # for debugging
-    # for idx, point in enumerate(landmarks):
-    #     cv2.circle(img_occluded, tuple(point), 2, (0, 255, 0), -1)
-    #     #mostrar texto con el indice del punto
-    #     cv2.putText(img_occluded, str(idx), tuple(point), cv2.FONT_HERSHEY_SIMPLEX, 0.3, (255, 0, 0), 1)
-
-    return img_occluded
+###################################
+############ Evaluation ###########
+###################################
 
 def compute_angle_error(pred, gt):
-    """Computes the absolute angular difference, correctly handling the 360-degree wrap-around."""
     diff = pred - gt
     return abs((diff + 180) % 360 - 180)
 
 def compare_head_pose_models_with_error(img_path, model_thpe, model_sixD, model_whenet):
-    """Runs inference across all pipelines, extracts ground truth labels, and outputs error metrics."""
     if not os.path.exists(img_path):
         print(f"Error: Target image file path '{img_path}' does not exist.")
         return
@@ -232,37 +186,51 @@ def compare_head_pose_models_with_error(img_path, model_thpe, model_sixD, model_
     plt.tight_layout()
     plt.show()
 
-def plot_training_history(train_losses, val_losses, model_name="Model"):
-    """
-    Plots the training and validation loss curves for a single model run.
-    """
-    epochs = range(1, len(train_losses) + 1)
-    
-    plt.figure(figsize=(9, 5))
-    
-    plt.plot(epochs, train_losses, label='Training Loss', marker='o', linewidth=2, color='#1f77b4')
-    plt.plot(epochs, val_losses, label='Validation Loss', marker='s', linewidth=2, color='#ff7f0e')
-    
-    plt.title(f'{model_name} - Training & Validation Loss History', fontsize=14, fontweight='bold', pad=15)
-    plt.xlabel('Epochs', fontsize=12)
-    plt.ylabel('Loss (MAE in Radians)', fontsize=12)
-    
-    plt.xticks(epochs)
-    
-    plt.grid(True, linestyle='--', alpha=0.5)
-    plt.legend(fontsize=11, loc='best')
-    
-    plt.tight_layout()
-    plt.show()    
+def cualitative_eval(img_path, device, model_baseline_q, model_finetuned_q):
+    if not os.path.exists(img_path):
+        raise FileNotFoundError(f"Image not found: {img_path}")
+    mat_path = os.path.splitext(img_path)[0] + ".mat"
+    if not os.path.exists(mat_path):
+        raise FileNotFoundError(f"Ground-truth .mat not found: {mat_path}")
 
+    mat = sio.loadmat(mat_path)
+
+    gt_pose = mat["HP_camera"][0]
+    gt_pitch, gt_yaw, gt_roll = float(gt_pose[3]), float(gt_pose[4]), float(gt_pose[5])
+
+    img_bgr = cv2.imread(img_path)
+    img_pil = Image.open(img_path).convert("RGB")
+
+    x = T.Compose([T.Resize((224, 224)), T.ToTensor()])(img_pil).unsqueeze(0).to(device)
+
+    with torch.no_grad():
+        pred_b = model_baseline_q(x)
+        pred_f = model_finetuned_q(x)
+
+    pred_angles_baseline = compute_euler_angles_from_rotation_matrices(pred_b[0]) * 180.0 / np.pi
+    pred_angles_finetuned = compute_euler_angles_from_rotation_matrices(pred_f[0]) * 180.0 / np.pi
+
+    pitch_baseline, yaw_baseline, roll_baseline = float(pred_angles_baseline[0,0]), float(pred_angles_baseline[0,1]), float(pred_angles_baseline[0,2])
+    pitch_finetuned, yaw_finetuned, roll_finetuned = float(pred_angles_finetuned[0,0]), float(pred_angles_finetuned[0,1]), float(pred_angles_finetuned[0,2])
+
+    err_baseline = (compute_angle_error(pitch_baseline, gt_pitch) + compute_angle_error(yaw_baseline, gt_yaw) + compute_angle_error(roll_baseline, gt_roll)) / 3.0
+    err_finetuned = (compute_angle_error(pitch_finetuned, gt_pitch) + compute_angle_error(yaw_finetuned, gt_yaw) + compute_angle_error(roll_finetuned, gt_roll)) / 3.0
+
+    print(f"Real -> Pitch:{gt_pitch:.2f} | Yaw:{gt_yaw:.2f} | Roll:{gt_roll:.2f}")
+    print(f"Baseline -> Pitch:{pitch_baseline:.2f} Yaw:{yaw_baseline:.2f} Roll:{roll_baseline:.2f} | MAE: {err_baseline:.2f}°")
+    print(f"Fine-tuned -> Pitch:{pitch_finetuned:.2f} Yaw:{yaw_finetuned:.2f} Roll:{roll_finetuned:.2f} | MAE: {err_finetuned:.2f}°")
+
+    img_b = img_bgr.copy(); draw_axis(img_b, yaw_baseline, pitch_baseline, roll_baseline, size=100)
+    img_f = img_bgr.copy(); draw_axis(img_f, yaw_finetuned, pitch_finetuned, roll_finetuned, size=100)
+    img_gt = img_bgr.copy(); draw_axis(img_gt, gt_yaw, gt_pitch, gt_roll, size=100)
+
+    fig, ax = plt.subplots(1,3, figsize=(16,5))
+    ax[0].imshow(cv2.cvtColor(img_b, cv2.COLOR_BGR2RGB)); ax[0].set_title(f"Baseline\nPitch:{pitch_baseline:.2f} Yaw:{yaw_baseline:.2f} Roll:{roll_baseline:.2f} | MAE: {err_baseline:.2f}°"); ax[0].axis('off')
+    ax[1].imshow(cv2.cvtColor(img_f, cv2.COLOR_BGR2RGB)); ax[1].set_title(f"Fine-tuned\nPitch:{pitch_finetuned:.2f} Yaw:{yaw_finetuned:.2f} Roll:{roll_finetuned:.2f} | MAE: {err_finetuned:.2f}°"); ax[1].axis('off')
+    ax[2].imshow(cv2.cvtColor(img_gt, cv2.COLOR_BGR2RGB)); ax[2].set_title(f"Ground Truth\nPitch:{gt_pitch:.2f} | Yaw:{gt_yaw:.2f} | Roll:{gt_roll:.2f}"); ax[2].axis('off')
+    plt.tight_layout(); plt.show()
 
 def evaluate_paired_images_thpe(img_path1, img_path2, model_thpe, device=None):
-    """
-    Runs TokenHPE inference on two related images (e.g., raw vs. occluded),
-    using the .mat file from the first image as the shared ground truth.
-    Prints a comparative evaluation table and displays both images side-by-side.
-    """
-    # Safety checks for files
     if not os.path.exists(img_path1):
         print(f"Error: Base image path '{img_path1}' does not exist.")
         return
@@ -270,7 +238,6 @@ def evaluate_paired_images_thpe(img_path1, img_path2, model_thpe, device=None):
         print(f"Error: Modified image path '{img_path2}' does not exist.")
         return
 
-    # 1. Ground Truth Extraction (Anchored to img_path1)
     base_path1, _ = os.path.splitext(img_path1)
     mat_path = base_path1 + ".mat"
     
@@ -285,7 +252,6 @@ def evaluate_paired_images_thpe(img_path1, img_path2, model_thpe, device=None):
     gt_yaw   = float(vector_6d[4])
     gt_roll  = float(vector_6d[5])
 
-    # Load image matrices
     img_cv1 = cv2.imread(img_path1)
     img_cv2 = cv2.imread(img_path2)
     img_pil1 = Image.open(img_path1).convert("RGB")
@@ -301,7 +267,6 @@ def evaluate_paired_images_thpe(img_path1, img_path2, model_thpe, device=None):
     
     model_thpe.eval()
     
-    # 2. Inference Pipeline (Image 1)
     x1 = transform(img_pil1).unsqueeze(0).to(device)
     with torch.no_grad():
         pred_mat1, _ = model_thpe(x1)
@@ -310,7 +275,6 @@ def evaluate_paired_images_thpe(img_path1, img_path2, model_thpe, device=None):
     euler1 = euler1 * 180.0 / np.pi
     p1, y1, r1 = float(euler1[0, 0]), float(euler1[0, 1]), float(euler1[0, 2])
 
-    # 3. Inference Pipeline (Image 2)
     x2 = transform(img_pil2).unsqueeze(0).to(device)
     with torch.no_grad():
         pred_mat2, _ = model_thpe(x2)
@@ -319,25 +283,21 @@ def evaluate_paired_images_thpe(img_path1, img_path2, model_thpe, device=None):
     euler2 = euler2 * 180.0 / np.pi
     p2, y2, r2 = float(euler2[0, 0]), float(euler2[0, 1]), float(euler2[0, 2])
 
-    # 4. Error Calculations
     def get_error(pred, gt):
         if 'compute_angle_error' in globals():
             return compute_angle_error(pred, gt)
         return abs(pred - gt)
         
-    # Image 1 Metrics
     err_p1 = get_error(p1, gt_pitch)
     err_y1 = get_error(y1, gt_yaw)
     err_r1 = get_error(r1, gt_roll)
     mae1 = (err_p1 + err_y1 + err_r1) / 3.0
     
-    # Image 2 Metrics
     err_p2 = get_error(p2, gt_pitch)
     err_y2 = get_error(y2, gt_yaw)
     err_r2 = get_error(r2, gt_roll)
     mae2 = (err_p2 + err_y2 + err_r2) / 3.0
     
-    # 5. Print Comparative Table
     print("\n" + "="*85)
     print(f"Ground Truth   | Pitch: {gt_pitch:+6.2f}° | Yaw: {gt_yaw:+6.2f}° | Roll: {gt_roll:+6.2f}°")
     print("="*85)
@@ -347,17 +307,14 @@ def evaluate_paired_images_thpe(img_path1, img_path2, model_thpe, device=None):
     print(f"{'2. Mod Image':<16} | {p2:+6.2f} ({err_p2:5.2f}°) | {y2:+6.2f} ({err_y2:5.2f}°) | {r2:+6.2f} ({err_r2:5.2f}°) | {mae2:5.2f}°")
     print("="*85 + "\n")
     
-    # 6. Axis Visualizations
     img_out1 = img_cv1.copy()
     draw_axis(img_out1, y1, p1, r1, size=100)
     
     img_out2 = img_cv2.copy()
     draw_axis(img_out2, y2, p2, r2, size=100)
     
-    # 7. Side-by-Side Plotting
     fig, axes = plt.subplots(1, 2, figsize=(15, 7.5))
     
-    # Plot Image 1
     axes[0].imshow(cv2.cvtColor(img_out1, cv2.COLOR_BGR2RGB))
     axes[0].set_title(
         f"1. Base Image (TokenHPE Predictions)\n"
@@ -367,7 +324,6 @@ def evaluate_paired_images_thpe(img_path1, img_path2, model_thpe, device=None):
     )
     axes[0].axis('off')
     
-    # Plot Image 2
     axes[1].imshow(cv2.cvtColor(img_out2, cv2.COLOR_BGR2RGB))
     axes[1].set_title(
         f"2. Modified Image (TokenHPE Predictions)\n"
@@ -379,3 +335,74 @@ def evaluate_paired_images_thpe(img_path1, img_path2, model_thpe, device=None):
     
     plt.tight_layout()
     plt.show()
+
+###################################
+############ Occlusion ############
+###################################
+
+def extract_landmarks(ruta_imagen):
+    photo_name = os.path.splitext(os.path.basename(ruta_imagen))[0]
+    folder = os.path.basename(os.path.dirname(ruta_imagen))
+    ruta_mat = f"./dataset/300W_LP/landmarks/{folder}/{photo_name}_pts.mat"
+    
+    if not os.path.exists(ruta_mat):
+        raise FileNotFoundError(f"Error: No landmarks found for: {ruta_mat}")
+
+    mat_data = sio.loadmat(ruta_mat)
+
+    if 'pts_2d' in mat_data:
+        landmarks = mat_data['pts_2d']
+    else:
+        raise ValueError(f"Error: No landmarks found for: {ruta_mat}")
+
+    return landmarks.astype(np.int32)
+
+def apply_occlusion(img, landmarks, mode="random"):
+    """
+    mode can be: 'random', 'clean', 'mask', 'glasses' or 'both'
+    """
+    img_occluded = img.copy()
+    
+    if mode == "random":
+        choice = np.random.choice(["clean", "mask", "glasses", "both"], p=[0.25, 0.25, 0.25, 0.25])
+    else:
+        choice = mode
+        
+    if choice == "clean":
+        return img_occluded
+
+    if choice in ["mask", "both"]:
+        jaw_points = landmarks[2:15]
+        nose_points = landmarks[29:31] 
+
+        mask_points = np.vstack((jaw_points, nose_points))
+
+        hull = cv2.convexHull(mask_points)
+
+        cv2.fillPoly(img_occluded, [hull], (0, 0, 0))
+
+    if choice in ["glasses", "both"]:
+        left_eye = landmarks[36:42]
+        right_eye = landmarks[42:48]
+        
+        left_hull = cv2.convexHull(left_eye)
+        right_hull = cv2.convexHull(right_eye)
+        
+        cv2.fillPoly(img_occluded, [left_hull], (0, 0, 0))
+        cv2.fillPoly(img_occluded, [right_hull], (0, 0, 0))
+        
+        expansion_thickness = 25
+        cv2.polylines(img_occluded, [left_hull], isClosed=True, color=(0, 0, 0), thickness=expansion_thickness)
+        cv2.polylines(img_occluded, [right_hull], isClosed=True, color=(0, 0, 0), thickness=expansion_thickness)
+        
+        pt1 = tuple(landmarks[39])
+        pt2 = tuple(landmarks[42])
+        cv2.line(img_occluded, pt1, pt2, (0, 0, 0), thickness=8)
+
+    # for debugging
+    # for idx, point in enumerate(landmarks):
+    #     cv2.circle(img_occluded, tuple(point), 2, (0, 255, 0), -1)
+    #     #mostrar texto con el indice del punto
+    #     cv2.putText(img_occluded, str(idx), tuple(point), cv2.FONT_HERSHEY_SIMPLEX, 0.3, (255, 0, 0), 1)
+
+    return img_occluded
