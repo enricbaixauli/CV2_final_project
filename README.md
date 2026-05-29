@@ -43,7 +43,7 @@ Install the dependencies in your preferred environment before running the notebo
 
 ## Typical Workflow
 
-1. Prepare or verify the datasets under `dataset/`.
+1. Prepare or verify the datasets under `dataset/`. The dataset can be downloaded through [this link](https://www.kaggle.com/datasets/705dc64640b143c1e31acbef73281cd9b809e111f1314882932dbc39a96c992d).
 2. Run `occlusion_demo.ipynb` if you need to regenerate or inspect the occluded samples.
 3. Use `models_demo.ipynb` to compare candidate models and confirm the selection of TokenHPE.
 4. Run `main.ipynb` to train, fine-tune and evaluate the final experiments.
