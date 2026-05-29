@@ -186,7 +186,7 @@ def compare_head_pose_models_with_error(img_path, model_thpe, model_sixD, model_
     plt.tight_layout()
     plt.show()
 
-def cualitative_eval(img_path, device, model_baseline_q, model_finetuned_q):
+def qualitative_eval(img_path, device, model_baseline_q, model_finetuned_q):
     if not os.path.exists(img_path):
         raise FileNotFoundError(f"Image not found: {img_path}")
     mat_path = os.path.splitext(img_path)[0] + ".mat"
