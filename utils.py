@@ -52,7 +52,7 @@ def evaluate_metrics(model, dataloader, device):
     target_ranges[target_ranges == 0] = 1e-8 
     nrmse_array = rmse_array / target_ranges
     
-    axes = ['pitch', 'yaw', 'roll']
+    axes = ['pitch', 'roll', 'yaw']
     
     mae = {axes[i]: mae_array[i] for i in range(3)}
     mae['total'] = np.mean(mae_array)
@@ -102,14 +102,14 @@ def compare_head_pose_models_with_error(img_path, model_thpe, model_sixD, model_
         return
 
     # Ground Truth Extraction
-    mat_path = img_path.replace(".jpg", ".mat")
+    mat_path = img_path.replace(".png", ".mat")
     if not os.path.exists(mat_path):
         print(f"Error: Accompanying ground-truth file '{mat_path}' not found.")
         return
         
     mat = sio.loadmat(mat_path)
-    gt_pose = mat["Pose_Para"][0][:3] * 180 / np.pi
-    gt_pitch, gt_yaw, gt_roll = float(gt_pose[0]), float(gt_pose[1]), float(gt_pose[2])
+    gt_pose = mat["HP_camera"][0]
+    gt_pitch, gt_yaw, gt_roll = float(gt_pose[3]), float(gt_pose[4]), float(gt_pose[5])
 
     img_cv = cv2.imread(img_path)
     img_pil = Image.open(img_path).convert("RGB")
