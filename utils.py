@@ -66,9 +66,6 @@ def evaluate_metrics(model, dataloader, device):
     return mae, rmse, nrmse
 
 def plot_training_history(train_losses, val_losses, model_name="Model"):
-    """
-    Plots the training and validation loss curves for a single model run.
-    """
     epochs = range(1, len(train_losses) + 1)
     
     plt.figure(figsize=(9, 5))
