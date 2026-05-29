@@ -1,0 +1,15 @@
+torch
+torchvision
+numpy
+scipy
+opencv-python
+matplotlib
+scikit-learn
+pillow
+face-alignment
+tqdm
+peft
+transformers
+jupyter
+notebook
+ipykernel
