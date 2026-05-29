@@ -230,16 +230,16 @@ def qualitative_eval(img_path, device, model_baseline_q, model_finetuned_q):
     ax[2].imshow(cv2.cvtColor(img_gt, cv2.COLOR_BGR2RGB)); ax[2].set_title(f"Ground Truth\nPitch:{gt_pitch:.2f} | Yaw:{gt_yaw:.2f} | Roll:{gt_roll:.2f}"); ax[2].axis('off')
     plt.tight_layout(); plt.show()
 
-def evaluate_paired_images_thpe(img_path1, img_path2, model_thpe, device=None):
+def evaluate_paired_images_thpe(img_path1, img_path2, img_path3, mat_path, model_thpe, device=None):
     if not os.path.exists(img_path1):
         print(f"Error: Base image path '{img_path1}' does not exist.")
         return
     if not os.path.exists(img_path2):
         print(f"Error: Modified image path '{img_path2}' does not exist.")
         return
-
-    base_path1, _ = os.path.splitext(img_path1)
-    mat_path = base_path1 + ".mat"
+    if not os.path.exists(img_path3):
+        print(f"Error: Third image path '{img_path3}' does not exist.")
+        return
     
     if not os.path.exists(mat_path):
         print(f"Error: Shared ground-truth file '{mat_path}' not found.")
@@ -254,8 +254,10 @@ def evaluate_paired_images_thpe(img_path1, img_path2, model_thpe, device=None):
 
     img_cv1 = cv2.imread(img_path1)
     img_cv2 = cv2.imread(img_path2)
+    img_cv3 = cv2.imread(img_path3)
     img_pil1 = Image.open(img_path1).convert("RGB")
     img_pil2 = Image.open(img_path2).convert("RGB")
+    img_pil3 = Image.open(img_path3).convert("RGB")
     
     if device is None:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -283,6 +285,14 @@ def evaluate_paired_images_thpe(img_path1, img_path2, model_thpe, device=None):
     euler2 = euler2 * 180.0 / np.pi
     p2, y2, r2 = float(euler2[0, 0]), float(euler2[0, 1]), float(euler2[0, 2])
 
+    x3 = transform(img_pil3).unsqueeze(0).to(device)
+    with torch.no_grad():
+        pred_mat3, _ = model_thpe(x3)
+    euler3 = compute_euler_angles_from_rotation_matrices(pred_mat3)
+    if isinstance(euler3, torch.Tensor): euler3 = euler3.cpu().numpy()
+    euler3 = euler3 * 180.0 / np.pi
+    p3, y3, r3 = float(euler3[0, 0]), float(euler3[0, 1]), float(euler3[0, 2])
+
     def get_error(pred, gt):
         if 'compute_angle_error' in globals():
             return compute_angle_error(pred, gt)
@@ -297,6 +307,11 @@ def evaluate_paired_images_thpe(img_path1, img_path2, model_thpe, device=None):
     err_y2 = get_error(y2, gt_yaw)
     err_r2 = get_error(r2, gt_roll)
     mae2 = (err_p2 + err_y2 + err_r2) / 3.0
+
+    err_p3 = get_error(p3, gt_pitch)
+    err_y3 = get_error(y3, gt_yaw)
+    err_r3 = get_error(r3, gt_roll)
+    mae3 = (err_p3 + err_y3 + err_r3) / 3.0
     
     print("\n" + "="*85)
     print(f"Ground Truth   | Pitch: {gt_pitch:+6.2f}° | Yaw: {gt_yaw:+6.2f}° | Roll: {gt_roll:+6.2f}°")
@@ -305,6 +320,7 @@ def evaluate_paired_images_thpe(img_path1, img_path2, model_thpe, device=None):
     print("="*85)
     print(f"{'1. Base Image':<16} | {p1:+6.2f} ({err_p1:5.2f}°) | {y1:+6.2f} ({err_y1:5.2f}°) | {r1:+6.2f} ({err_r1:5.2f}°) | {mae1:5.2f}°")
     print(f"{'2. Mod Image':<16} | {p2:+6.2f} ({err_p2:5.2f}°) | {y2:+6.2f} ({err_y2:5.2f}°) | {r2:+6.2f} ({err_r2:5.2f}°) | {mae2:5.2f}°")
+    print(f"{'3. Third Image':<16} | {p3:+6.2f} ({err_p3:5.2f}°) | {y3:+6.2f} ({err_y3:5.2f}°) | {r3:+6.2f} ({err_r3:5.2f}°) | {mae3:5.2f}°")
     print("="*85 + "\n")
     
     img_out1 = img_cv1.copy()
@@ -312,9 +328,12 @@ def evaluate_paired_images_thpe(img_path1, img_path2, model_thpe, device=None):
     
     img_out2 = img_cv2.copy()
     draw_axis(img_out2, y2, p2, r2, size=100)
-    
-    fig, axes = plt.subplots(1, 2, figsize=(15, 7.5))
-    
+
+    img_out3 = img_cv3.copy()
+    draw_axis(img_out3, y3, p3, r3, size=100)
+
+    fig, axes = plt.subplots(1, 3, figsize=(18, 7.5))
+
     axes[0].imshow(cv2.cvtColor(img_out1, cv2.COLOR_BGR2RGB))
     axes[0].set_title(
         f"1. Base Image (TokenHPE Predictions)\n"
@@ -323,7 +342,7 @@ def evaluate_paired_images_thpe(img_path1, img_path2, model_thpe, device=None):
         fontsize=11, fontweight='bold'
     )
     axes[0].axis('off')
-    
+
     axes[1].imshow(cv2.cvtColor(img_out2, cv2.COLOR_BGR2RGB))
     axes[1].set_title(
         f"2. Modified Image (TokenHPE Predictions)\n"
@@ -332,7 +351,16 @@ def evaluate_paired_images_thpe(img_path1, img_path2, model_thpe, device=None):
         fontsize=11, fontweight='bold'
     )
     axes[1].axis('off')
-    
+
+    axes[2].imshow(cv2.cvtColor(img_out3, cv2.COLOR_BGR2RGB))
+    axes[2].set_title(
+        f"3. Third Image (TokenHPE Predictions)\n"
+        f"MAE: {mae3:.2f}°\n"
+        f"Err -> P: {err_p3:.1f}°, Y: {err_y3:.1f}°, R: {err_r3:.1f}°",
+        fontsize=11, fontweight='bold'
+    )
+    axes[2].axis('off')
+
     plt.tight_layout()
     plt.show()
 
