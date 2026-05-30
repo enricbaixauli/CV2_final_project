@@ -17,7 +17,6 @@ The workflow of the project is organized around three main notebooks:
 - `models_demo.ipynb`: comparison notebook for the three candidate models.
 - `dataset.py`: dataset definition.
 - `utils.py`: helper functions for training, evaluation, visualization and occlusion generation.
-- `inference.py`: inference utilities for running predictions with trained models.
 - `models/`: model definitions and support code.
 - `weights/`: pretrained and fine-tuned model weights.
 - `dataset/`: dataset files.
@@ -46,7 +45,7 @@ Install the dependencies in your preferred environment before running the notebo
 1. Prepare or verify the datasets under `dataset/`. The dataset can be downloaded through [this link](https://www.kaggle.com/datasets/705dc64640b143c1e31acbef73281cd9b809e111f1314882932dbc39a96c992d).
 2. Run `occlusion_demo.ipynb` if you need to regenerate or inspect the occluded samples.
 3. Use `models_demo.ipynb` to compare candidate models and confirm the selection of TokenHPE.
-4. Run `main.ipynb` to train, fine-tune and evaluate the final experiments.
+4. Run `main.ipynb` to train, fine-tune and evaluate the final experiments. Our fine-tuned model's weights can be downloaded in [this link.](https://huggingface.co/enricbc/Fully_Fine-tuned_TokenHPE_occlusion)
 
 ## Authors
 
