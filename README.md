@@ -21,6 +21,7 @@ The workflow of the project is organized around three main notebooks:
 - `weights/`: pretrained and fine-tuned model weights.
 - `dataset/`: dataset files.
 - `test_failure/`: manually collected failure examples and edge cases.
+- `report.pdf`: Contains the detailed report of our work.
 
 ## Requirements
 
